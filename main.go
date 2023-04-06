@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 
@@ -34,11 +35,11 @@ type filesDetails struct {
 }
 
 const (
-	host     = "localhost"
+	host     = "database-2.cwlf1t1daphi.eu-north-1.rds.amazonaws.com"
 	port     = 5432
 	user     = "postgres"
 	password = "admin123"
-	dbname   = "EmployeeDb"
+	dbname   = "sampledb"
 )
 
 var users = []userDetails{}
@@ -58,6 +59,7 @@ func main() {
 	router.GET("/filedata/:id", GetFileDataById)
 	router.PUT("/fileupdate/:id", UpdateFileById)
 	router.POST("/filedata", AddFile)
+	router.POST("/fileupload", AddUploadedFile)
 	router.Run("localhost:8000")
 
 	fmt.Printf("Hello")
@@ -136,7 +138,7 @@ func GetDataById(c *gin.Context) {
 	// Return the retrieved data in the HTTP response
 	IDStr := "'" + ID + "'"
 
-	rows, err := db.Query(`SELECT * FROM "UserDetailsDB" WHERE Id = ` + IDStr)
+	rows, err := db.Query(`SELECT * FROM "UserDetailsTable" WHERE Id = ` + IDStr)
 	log.Println("rows", rows)
 
 	if err != nil {
@@ -173,7 +175,7 @@ func GetAllData(c *gin.Context) {
 	err = db.Ping()
 
 	//db := Database.dbConnection()
-	rows, err := db.Query(`SELECT * FROM "UserDetailsDB"`)
+	rows, err := db.Query(`SELECT * FROM "UserDetailsTable"`)
 
 	if err != nil {
 		panic(err)
@@ -216,7 +218,7 @@ func dbConnection(newuser userDetails, requestTypes string) {
 
 	if requestTypes == "post" {
 
-		sqlStatement := `INSERT INTO "UserDetailsDB" (id,name,password,address,email,gender,phone,country)
+		sqlStatement := `INSERT INTO "UserDetailsTable" (id,name,password,address,email,gender,phone,country)
 	VALUES($1, $2,$3,$4,$5,$6,$7,$8)`
 		_, err = db.Exec(sqlStatement, newuser.Id, newuser.Name, newuser.Password, newuser.Address, newuser.Email, newuser.Gender, newuser.Phone, newuser.Country)
 
@@ -225,7 +227,7 @@ func dbConnection(newuser userDetails, requestTypes string) {
 	if err != nil {
 		panic(err)
 	}
-	/*	sqlStatement := `INSERT INTO "UserDetailsDB" (name,password)`
+	/*	sqlStatement := `INSERT INTO "UserDetailsTable" (name,password)`
 		VALUES(newuser.Name, newuser.Password)
 		_, err = db.Exec(sqlStatement)*/
 
@@ -305,4 +307,74 @@ func UpdateFileById(c *gin.Context) {
 		panic(err)
 	}
 	c.IndentedJSON(http.StatusCreated, updatedfile)
+}
+
+func AddUploadedFile(c *gin.Context) {
+
+	err := c.Request.ParseMultipartForm(10 << 20)
+	if err != nil {
+		fmt.Println("Error Retrieving the File")
+		fmt.Println(err)
+		c.String(http.StatusInternalServerError, "Failed to parse multipart form")
+		return
+	}
+
+	// FormFile returns the first file for the given key `myFile`
+	// it also returns the FileHeader so we can get the Filename,
+	// the Header and the size of the file
+	file, handler, err := c.Request.FormFile("myFile")
+	if err != nil {
+		fmt.Println("Error Retrieving the File")
+		fmt.Println(err)
+		c.String(http.StatusBadRequest, "Failed to retrieve file from form data")
+		return
+	}
+	defer file.Close()
+	fmt.Printf("Uploaded File: %+v\n", handler.Filename)
+	fmt.Printf("File Size: %+v\n", handler.Size)
+	fmt.Printf("MIME Header: %+v\n", handler.Header)
+
+	//
+	tempFile, err := ioutil.TempFile("", "Uploadedfile-")
+	if err != nil {
+		fmt.Println(err)
+		c.String(http.StatusInternalServerError, "Failed to create temporary file")
+		return
+	}
+	fmt.Println(tempFile)
+	defer tempFile.Close()
+
+	// read all of the contents of our uploaded file into a
+	// byte array
+	fileBytes, err := ioutil.ReadAll(file)
+	if err != nil {
+		fmt.Println(err)
+		c.String(http.StatusInternalServerError, "Failed to read file contents")
+		return
+	}
+	// write this byte array to our temporary file
+	tempFile.Write(fileBytes)
+	// return that we have successfully uploaded our file!
+	c.String(http.StatusOK, "Successfully Uploaded File")
+	// open a database connection
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// insert a record in the database with the file's metadata
+	fid := 7899077
+	_, err = db.Exec("INSERT INTO UploadedFile (fid,filename, filepath, filesize, mimetype) VALUES ($1, $2, $3, $4,$5)",
+		fid, handler.Filename, tempFile.Name(), len(fileBytes), handler.Header.Get("Content-Type"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// return a success message to the client
+	c.String(http.StatusOK, "Successfully Uploaded File")
+
 }
