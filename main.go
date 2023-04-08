@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -31,6 +33,13 @@ type filesDetails struct {
 	SaveDate     string `json:"savedate"`
 	FileStatus   bool   `json:"filestatus"`
 	UserName     string `json:"username"`
+	SaveDateTime string `json:"savedatetime"`
+}
+
+type docDetails struct {
+	Username     string `json:"username"`
+	Filename     string `json:"filename"`
+	Docstatus    bool   `json:"docstatus"`
 	SaveDateTime string `json:"savedatetime"`
 }
 
@@ -60,6 +69,8 @@ func main() {
 	router.PUT("/fileupdate/:id", UpdateFileById)
 	router.POST("/filedata", AddFile)
 	router.POST("/fileupload", AddUploadedFile)
+	router.POST("/filedownload/:filename", downloadFile)
+	router.GET("/alldoc/:id", GetAllDoc)
 	router.Run("localhost:8000")
 
 	fmt.Printf("Hello")
@@ -227,10 +238,6 @@ func dbConnection(newuser userDetails, requestTypes string) {
 	if err != nil {
 		panic(err)
 	}
-	/*	sqlStatement := `INSERT INTO "UserDetailsTable" (name,password)`
-		VALUES(newuser.Name, newuser.Password)
-		_, err = db.Exec(sqlStatement)*/
-
 }
 
 func GetFileDataById(c *gin.Context) {
@@ -248,7 +255,6 @@ func GetFileDataById(c *gin.Context) {
 	ID := c.Param("id")
 	log.Println("ID", ID)
 
-	// Return the retrieved data in the HTTP response
 	IDStr := "'" + ID + "'"
 
 	rows, err := db.Query(`SELECT * FROM "TextEditorFileContent" WHERE username = ` + IDStr)
@@ -319,10 +325,8 @@ func AddUploadedFile(c *gin.Context) {
 		return
 	}
 
-	// FormFile returns the first file for the given key `myFile`
-	// it also returns the FileHeader so we can get the Filename,
-	// the Header and the size of the file
 	file, handler, err := c.Request.FormFile("myFile")
+
 	if err != nil {
 		fmt.Println("Error Retrieving the File")
 		fmt.Println(err)
@@ -335,8 +339,9 @@ func AddUploadedFile(c *gin.Context) {
 	fmt.Printf("MIME Header: %+v\n", handler.Header)
 
 	//
-	tempFile, err := ioutil.TempFile("", "Uploadedfile-")
+	tempFile, err := ioutil.TempFile("", "file")
 	if err != nil {
+		fmt.Println("Error Retrieving the File")
 		fmt.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to create temporary file")
 		return
@@ -347,7 +352,9 @@ func AddUploadedFile(c *gin.Context) {
 	// read all of the contents of our uploaded file into a
 	// byte array
 	fileBytes, err := ioutil.ReadAll(file)
+
 	if err != nil {
+		fmt.Println("Error Retrieving the File")
 		fmt.Println(err)
 		c.String(http.StatusInternalServerError, "Failed to read file contents")
 		return
@@ -367,14 +374,95 @@ func AddUploadedFile(c *gin.Context) {
 	defer db.Close()
 
 	// insert a record in the database with the file's metadata
-	fid := 7899077
-	_, err = db.Exec("INSERT INTO UploadedFile (fid,filename, filepath, filesize, mimetype) VALUES ($1, $2, $3, $4,$5)",
-		fid, handler.Filename, tempFile.Name(), len(fileBytes), handler.Header.Get("Content-Type"))
+	currentTime := time.Now().UTC().Format("20060102150405") // Format: YYYYMMDDHHmmss
+	timestamp, err := strconv.Atoi(currentTime)
+	fid := timestamp
+	username := c.PostForm("username")
+	savedatetime := c.PostForm("savedatetime")
+
+	_, err = db.Exec(`INSERT INTO "UploadedFile" (fid,filename, filepath, filesize, mimetype,username,savedatetime,filecontent) VALUES ($1, $2, $3, $4,$5,$6,$7,E'\\x' || $8::bytea)`,
+		fid, handler.Filename, tempFile.Name(), len(fileBytes), handler.Header.Get("Content-Type"), username, savedatetime, fileBytes)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// return a success message to the client
 	c.String(http.StatusOK, "Successfully Uploaded File")
+
+}
+
+func downloadFile(c *gin.Context) {
+	filename := c.Param("filename")
+
+	// open a database connection
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// retrieve the file contents from the database
+	var fileContent []byte
+	err = db.QueryRow("SELECT filecontent FROM UploadedFile WHERE filename=$1", filename).Scan(&fileContent)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// set the response headers
+	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Disposition", "attachment; filename="+filename)
+	c.Header("Content-Type", http.DetectContentType(fileContent))
+	c.Header("Content-Length", strconv.Itoa(len(fileContent)))
+
+	// write the file contents to the response
+	c.Data(http.StatusOK, "application/octet-stream", fileContent)
+}
+
+func GetAllDoc(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := "'" + ID + "'"
+
+	rows, err := db.Query(`SELECT username,filename,docstatus,savedatetime FROM "UploadedFile" WHERE username = ` + IDStr)
+	log.Println("rows", rows)
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer rows.Close()
+
+	var docDetailsList []docDetails
+
+	for rows.Next() {
+		var docDetails docDetails
+		err := rows.Scan(&docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime)
+		log.Println("docDetails.Username", docDetails.Username)
+		if err != nil {
+			log.Println(err)
+		}
+		if docDetails.Docstatus == true {
+			docDetailsList = append(docDetailsList, docDetails)
+		}
+		log.Println("docDetailsList", docDetailsList)
+	}
+
+	c.IndentedJSON(http.StatusOK, docDetailsList)
 
 }
