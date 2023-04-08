@@ -69,7 +69,7 @@ func main() {
 	router.PUT("/fileupdate/:id", UpdateFileById)
 	router.POST("/filedata", AddFile)
 	router.POST("/fileupload", AddUploadedFile)
-	router.POST("/filedownload/:filename", downloadFile)
+	router.GET("/filedownload/:filename", downloadFile)
 	router.GET("/alldoc/:id", GetAllDoc)
 	router.Run("localhost:8000")
 
@@ -406,19 +406,19 @@ func downloadFile(c *gin.Context) {
 
 	// retrieve the file contents from the database
 	var fileContent []byte
-	err = db.QueryRow("SELECT filecontent FROM UploadedFile WHERE filename=$1", filename).Scan(&fileContent)
+	err = db.QueryRow(`SELECT filecontent FROM "UploadedFile" WHERE filename=$1`, filename).Scan(&fileContent)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// set the response headers
-	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Description", "Document")
 	c.Header("Content-Disposition", "attachment; filename="+filename)
 	c.Header("Content-Type", http.DetectContentType(fileContent))
 	c.Header("Content-Length", strconv.Itoa(len(fileContent)))
 
 	// write the file contents to the response
-	c.Data(http.StatusOK, "application/octet-stream", fileContent)
+	c.Data(http.StatusOK, http.DetectContentType(fileContent), fileContent)
 }
 
 func GetAllDoc(c *gin.Context) {
