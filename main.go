@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -37,6 +38,7 @@ type filesDetails struct {
 }
 
 type docDetails struct {
+	Fid          string `json:"fid"`
 	Username     string `json:"username"`
 	Filename     string `json:"filename"`
 	Docstatus    bool   `json:"docstatus"`
@@ -52,6 +54,7 @@ const (
 )
 
 var users = []userDetails{}
+var ErrCiphertextTooShort = errors.New("ciphertext too short")
 
 func main() {
 
@@ -68,13 +71,14 @@ func main() {
 	router.GET("/filedata/:id", GetFileDataById)
 	router.PUT("/fileupdate/:id", UpdateFileById)
 	router.POST("/filedata", AddFile)
+
+	//FileManager
+
 	router.POST("/fileupload", AddUploadedFile)
-	router.POST("/filedownload/:filename", downloadFile)
+	router.GET("/filedownload/:filename", downloadFile)
 	router.GET("/alldoc/:id", GetAllDoc)
+	router.PUT("/deletefile/:id", DeleteFile)
 	router.Run("localhost:8000")
-
-	fmt.Printf("Hello")
-
 }
 
 func AddFile(c *gin.Context) {
@@ -129,6 +133,36 @@ func AddUsers(c *gin.Context) {
 	users = append(users, newuser)
 	c.IndentedJSON(http.StatusCreated, newuser)
 
+}
+
+func dbConnection(newuser userDetails, requestTypes string) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	err = db.Ping()
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println("Successfully connected!")
+	if requestTypes == "post" {
+
+		sqlStatement := `INSERT INTO "UserDetailsDB" (id,name,password,address,email,gender,phone,country)
+	VALUES($1, $2,$3,$4,$5,$6,$7,$8)`
+		_, err = db.Exec(sqlStatement, newuser.Id, newuser.Name, newuser.Password, newuser.Address, newuser.Email, newuser.Gender, newuser.Phone, newuser.Country)
+
+	}
+
+	if err != nil {
+		panic(err)
+	}
 }
 
 func GetDataById(c *gin.Context) {
@@ -209,37 +243,6 @@ func GetAllData(c *gin.Context) {
 
 }
 
-func dbConnection(newuser userDetails, requestTypes string) {
-
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-	db, err := sql.Open("postgres", psqlInfo)
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
-
-	err = db.Ping()
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("Successfully connected!")
-
-	if requestTypes == "post" {
-
-		sqlStatement := `INSERT INTO "UserDetailsTable" (id,name,password,address,email,gender,phone,country)
-	VALUES($1, $2,$3,$4,$5,$6,$7,$8)`
-		_, err = db.Exec(sqlStatement, newuser.Id, newuser.Name, newuser.Password, newuser.Address, newuser.Email, newuser.Gender, newuser.Phone, newuser.Country)
-
-	}
-
-	if err != nil {
-		panic(err)
-	}
-}
-
 func GetFileDataById(c *gin.Context) {
 
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
@@ -315,6 +318,8 @@ func UpdateFileById(c *gin.Context) {
 	c.IndentedJSON(http.StatusCreated, updatedfile)
 }
 
+//FileManager
+
 func AddUploadedFile(c *gin.Context) {
 
 	err := c.Request.ParseMultipartForm(10 << 20)
@@ -346,11 +351,8 @@ func AddUploadedFile(c *gin.Context) {
 		c.String(http.StatusInternalServerError, "Failed to create temporary file")
 		return
 	}
-	fmt.Println(tempFile)
 	defer tempFile.Close()
 
-	// read all of the contents of our uploaded file into a
-	// byte array
 	fileBytes, err := ioutil.ReadAll(file)
 
 	if err != nil {
@@ -406,19 +408,21 @@ func downloadFile(c *gin.Context) {
 
 	// retrieve the file contents from the database
 	var fileContent []byte
-	err = db.QueryRow("SELECT filecontent FROM UploadedFile WHERE filename=$1", filename).Scan(&fileContent)
+
+	err = db.QueryRow(`SELECT filecontent FROM "UploadedFile" WHERE filename=$1`, filename).Scan(&fileContent)
+
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	// set the response headers
-	c.Header("Content-Description", "File Transfer")
+	c.Header("Content-Description", "Document")
 	c.Header("Content-Disposition", "attachment; filename="+filename)
 	c.Header("Content-Type", http.DetectContentType(fileContent))
 	c.Header("Content-Length", strconv.Itoa(len(fileContent)))
 
 	// write the file contents to the response
-	c.Data(http.StatusOK, "application/octet-stream", fileContent)
+	c.Data(http.StatusOK, http.DetectContentType(fileContent), fileContent)
 }
 
 func GetAllDoc(c *gin.Context) {
@@ -439,8 +443,7 @@ func GetAllDoc(c *gin.Context) {
 	// Return the retrieved data in the HTTP response
 	IDStr := "'" + ID + "'"
 
-	rows, err := db.Query(`SELECT username,filename,docstatus,savedatetime FROM "UploadedFile" WHERE username = ` + IDStr)
-	log.Println("rows", rows)
+	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime FROM "UploadedFile" WHERE username = ` + IDStr)
 
 	if err != nil {
 		panic(err)
@@ -452,17 +455,48 @@ func GetAllDoc(c *gin.Context) {
 
 	for rows.Next() {
 		var docDetails docDetails
-		err := rows.Scan(&docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime)
-		log.Println("docDetails.Username", docDetails.Username)
+		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime)
 		if err != nil {
 			log.Println(err)
 		}
 		if docDetails.Docstatus == true {
 			docDetailsList = append(docDetailsList, docDetails)
 		}
-		log.Println("docDetailsList", docDetailsList)
+
 	}
 
 	c.IndentedJSON(http.StatusOK, docDetailsList)
+
+}
+
+func DeleteFile(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	var updateddoc docDetails
+
+	if err := c.BindJSON(&updateddoc); err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := ID
+	fmt.Println("updatedfile", updateddoc.Docstatus, updateddoc.SaveDateTime, IDStr)
+	sqlStatement := `UPDATE "UploadedFile" SET  "docstatus"=$1, "username"=$2, "savedatetime"=$3 WHERE "fid"=$4`
+	_, err = db.Exec(sqlStatement, updateddoc.Docstatus, updateddoc.Username, updateddoc.SaveDateTime, IDStr)
+	if err != nil {
+		panic(err)
+	}
+	c.IndentedJSON(http.StatusCreated, updateddoc)
 
 }
