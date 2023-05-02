@@ -31,7 +31,7 @@ type filesDetails struct {
 	Userid       int    `json:"userid"`
 	FileName     string `json:"filename"`
 	FileContent  string `json:"filecontent"`
-	SaveDate     string `json:"savedate"`
+	SaveDate     string `json:"savedate"` 
 	FileStatus   bool   `json:"filestatus"`
 	UserName     string `json:"username"`
 	SaveDateTime string `json:"savedatetime"`
