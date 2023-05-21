@@ -31,7 +31,7 @@ type filesDetails struct {
 	Userid       int    `json:"userid"`
 	FileName     string `json:"filename"`
 	FileContent  string `json:"filecontent"`
-	SaveDate     string `json:"savedate"`
+	SaveDate     string `json:"savedate"` 
 	FileStatus   bool   `json:"filestatus"`
 	UserName     string `json:"username"`
 	SaveDateTime string `json:"savedatetime"`
@@ -155,7 +155,7 @@ func dbConnection(newuser userDetails, requestTypes string) {
 	fmt.Println("Successfully connected!")
 	if requestTypes == "post" {
 
-		sqlStatement := `INSERT INTO "UserDetailsDB" (id,name,password,address,email,gender,phone,country)
+		sqlStatement := `INSERT INTO "UserDetailsTable" (id,name,password,address,email,gender,phone,country)
 	VALUES($1, $2,$3,$4,$5,$6,$7,$8)`
 		_, err = db.Exec(sqlStatement, newuser.Id, newuser.Name, newuser.Password, newuser.Address, newuser.Email, newuser.Gender, newuser.Phone, newuser.Country)
 
