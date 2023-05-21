@@ -43,6 +43,7 @@ type docDetails struct {
 	Filename     string `json:"filename"`
 	Docstatus    bool   `json:"docstatus"`
 	SaveDateTime string `json:"savedatetime"`
+	SendBy       string `json:"sendby"`
 }
 
 const (
@@ -65,7 +66,7 @@ func main() {
 	router.Use(cors.Default())
 
 	//dataController := Controller.NewDataController()
-	router.GET("/data", GetAllData)
+	router.GET("/userdata", GetAllData)
 	router.POST("/data", AddUsers)
 	router.GET("/data/:id", GetDataById)
 	router.GET("/filedata/:id", GetFileDataById)
@@ -220,7 +221,7 @@ func GetAllData(c *gin.Context) {
 	err = db.Ping()
 
 	//db := Database.dbConnection()
-	rows, err := db.Query(`SELECT * FROM "UserDetailsTable"`)
+	rows, err := db.Query(`SELECT name,id FROM "UserDetailsTable"`)
 
 	if err != nil {
 		panic(err)
@@ -232,7 +233,7 @@ func GetAllData(c *gin.Context) {
 
 	for rows.Next() {
 		var userDetails userDetails
-		err := rows.Scan(&userDetails.Name, &userDetails.Password, &userDetails.Id, &userDetails.Phone, &userDetails.Email, &userDetails.Address, &userDetails.Country, &userDetails.Gender)
+		err := rows.Scan(&userDetails.Name, &userDetails.Id)
 		if err != nil {
 			panic(err)
 		}
@@ -381,13 +382,13 @@ func AddUploadedFile(c *gin.Context) {
 	fid := timestamp
 	username := c.PostForm("username")
 	savedatetime := c.PostForm("savedatetime")
+	sendby := c.PostForm("sendBy")
 
-	_, err = db.Exec(`INSERT INTO "UploadedFile" (fid,filename, filepath, filesize, mimetype,username,savedatetime,filecontent) VALUES ($1, $2, $3, $4,$5,$6,$7,E'\\x' || $8::bytea)`,
-		fid, handler.Filename, tempFile.Name(), len(fileBytes), handler.Header.Get("Content-Type"), username, savedatetime, fileBytes)
+	_, err = db.Exec(`INSERT INTO "UploadedFile" (fid,filename, filepath, filesize, mimetype,username,sendby,savedatetime,filecontent) VALUES ($1, $2, $3, $4,$5,$6,$7,$8,E'\\x' || $9::bytea)`,
+		fid, handler.Filename, tempFile.Name(), len(fileBytes), handler.Header.Get("Content-Type"), username, sendby, savedatetime, fileBytes)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	// return a success message to the client
 	c.String(http.StatusOK, "Successfully Uploaded File")
 
@@ -443,7 +444,7 @@ func GetAllDoc(c *gin.Context) {
 	// Return the retrieved data in the HTTP response
 	IDStr := "'" + ID + "'"
 
-	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime FROM "UploadedFile" WHERE username = ` + IDStr)
+	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime ,sendby FROM "UploadedFile" WHERE username = ` + IDStr)
 
 	if err != nil {
 		panic(err)
@@ -455,7 +456,7 @@ func GetAllDoc(c *gin.Context) {
 
 	for rows.Next() {
 		var docDetails docDetails
-		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime)
+		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime, &docDetails.SendBy)
 		if err != nil {
 			log.Println(err)
 		}
