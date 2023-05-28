@@ -31,7 +31,7 @@ type filesDetails struct {
 	Userid       int    `json:"userid"`
 	FileName     string `json:"filename"`
 	FileContent  string `json:"filecontent"`
-	SaveDate     string `json:"savedate"` 
+	SaveDate     string `json:"savedate"`
 	FileStatus   bool   `json:"filestatus"`
 	UserName     string `json:"username"`
 	SaveDateTime string `json:"savedatetime"`
@@ -78,6 +78,7 @@ func main() {
 	router.POST("/fileupload", AddUploadedFile)
 	router.GET("/filedownload/:filename", downloadFile)
 	router.GET("/alldoc/:id", GetAllDoc)
+	router.GET("/allhistorydoc/:id", GetAllHistoryDoc)
 	router.PUT("/deletefile/:id", DeleteFile)
 	router.Run("localhost:8000")
 }
@@ -445,6 +446,50 @@ func GetAllDoc(c *gin.Context) {
 	IDStr := "'" + ID + "'"
 
 	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime ,sendby FROM "UploadedFile" WHERE username = ` + IDStr)
+
+	if err != nil {
+		panic(err)
+	}
+
+	defer rows.Close()
+
+	var docDetailsList []docDetails
+
+	for rows.Next() {
+		var docDetails docDetails
+		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime, &docDetails.SendBy)
+		if err != nil {
+			log.Println(err)
+		}
+		if docDetails.Docstatus == true {
+			docDetailsList = append(docDetailsList, docDetails)
+		}
+
+	}
+
+	c.IndentedJSON(http.StatusOK, docDetailsList)
+
+}
+
+func GetAllHistoryDoc(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := "'" + ID + "'"
+
+	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime ,sendby FROM "UploadedFile" WHERE sendby = ` + IDStr)
 
 	if err != nil {
 		panic(err)
