@@ -51,7 +51,7 @@ const (
 	port     = 5432
 	user     = "postgres"
 	password = "admin123"
-	dbname   = "sampledb"
+	dbname   = "postgres"
 )
 
 var users = []userDetails{}
