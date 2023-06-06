@@ -47,7 +47,7 @@ type docDetails struct {
 }
 
 const (
-	host     = "database-2.cwlf1t1daphi.eu-north-1.rds.amazonaws.com"
+	host     = "database-go-coders.c6xuaoufhj3r.ap-south-1.rds.amazonaws.com"
 	port     = 5432
 	user     = "postgres"
 	password = "admin123"
