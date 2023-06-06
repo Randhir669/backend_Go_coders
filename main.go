@@ -61,7 +61,7 @@ func main() {
 
 	router := gin.Default()
 
-	// Initialize routess
+	// Initialize routes
 
 	router.Use(cors.Default())
 
