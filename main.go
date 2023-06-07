@@ -47,11 +47,11 @@ type docDetails struct {
 }
 
 const (
-	host     = "database-2.cwlf1t1daphi.eu-north-1.rds.amazonaws.com"
+	host     = "database-go-coders.c6xuaoufhj3r.ap-south-1.rds.amazonaws.com"
 	port     = 5432
 	user     = "postgres"
 	password = "admin123"
-	dbname   = "sampledb"
+	dbname   = "postgres" //"EmployeeDb"
 )
 
 var users = []userDetails{}
@@ -66,9 +66,14 @@ func main() {
 	router.Use(cors.Default())
 
 	//dataController := Controller.NewDataController()
+
+	//usersAPI
 	router.GET("/userdata", GetAllData)
 	router.POST("/data", AddUsers)
 	router.GET("/data/:id", GetDataById)
+	router.PUT("/resetpassword/:id", ResetPassword)
+
+	//Notesmanager
 	router.GET("/filedata/:id", GetFileDataById)
 	router.PUT("/fileupdate/:id", UpdateFileById)
 	router.POST("/filedata", AddFile)
@@ -80,6 +85,7 @@ func main() {
 	router.GET("/alldoc/:id", GetAllDoc)
 	router.GET("/allhistorydoc/:id", GetAllHistoryDoc)
 	router.PUT("/deletefile/:id", DeleteFile)
+
 	router.Run("localhost:8000")
 }
 
@@ -222,7 +228,7 @@ func GetAllData(c *gin.Context) {
 	err = db.Ping()
 
 	//db := Database.dbConnection()
-	rows, err := db.Query(`SELECT name,id FROM "UserDetailsTable"`)
+	rows, err := db.Query(`SELECT name,id,email FROM "UserDetailsTable"`)
 
 	if err != nil {
 		panic(err)
@@ -234,7 +240,7 @@ func GetAllData(c *gin.Context) {
 
 	for rows.Next() {
 		var userDetails userDetails
-		err := rows.Scan(&userDetails.Name, &userDetails.Id)
+		err := rows.Scan(&userDetails.Name, &userDetails.Id, &userDetails.Email)
 		if err != nil {
 			panic(err)
 		}
@@ -243,6 +249,37 @@ func GetAllData(c *gin.Context) {
 
 	c.IndentedJSON(http.StatusOK, userDetailsList)
 
+}
+
+func ResetPassword(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	var userDetailsList userDetails
+
+	if err := c.BindJSON(&userDetailsList); err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := ID
+	fmt.Println("userDetailsList", userDetailsList.Password, IDStr)
+	sqlStatement := `UPDATE "UserDetailsTable" SET  "password"=$1 WHERE "id"=$2`
+	_, err = db.Exec(sqlStatement, userDetailsList.Password, IDStr)
+	if err != nil {
+		panic(err)
+	}
+	c.IndentedJSON(http.StatusCreated, userDetailsList)
 }
 
 func GetFileDataById(c *gin.Context) {
