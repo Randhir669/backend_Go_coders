@@ -35,6 +35,7 @@ type filesDetails struct {
 	FileStatus   bool   `json:"filestatus"`
 	UserName     string `json:"username"`
 	SaveDateTime string `json:"savedatetime"`
+	IsStarred    bool   `json:"isstarred"`
 }
 
 type docDetails struct {
@@ -44,6 +45,7 @@ type docDetails struct {
 	Docstatus    bool   `json:"docstatus"`
 	SaveDateTime string `json:"savedatetime"`
 	SendBy       string `json:"sendby"`
+	IsStarred    bool   `json:"isstarred"`
 }
 
 const (
@@ -76,6 +78,7 @@ func main() {
 	//Notesmanager
 	router.GET("/filedata/:id", GetFileDataById)
 	router.PUT("/fileupdate/:id", UpdateFileById)
+	router.PUT("/isstarred/:id", UpdatestarredById)
 	router.POST("/filedata", AddFile)
 
 	//FileManager
@@ -85,6 +88,7 @@ func main() {
 	router.GET("/alldoc/:id", GetAllDoc)
 	router.GET("/allhistorydoc/:id", GetAllHistoryDoc)
 	router.PUT("/deletefile/:id", DeleteFile)
+	router.PUT("/starredfile/:id", starredfile)
 
 	router.Run("localhost:8000")
 }
@@ -115,9 +119,9 @@ func AddFile(c *gin.Context) {
 	fmt.Println("Successfully connected!")
 	fmt.Println("newfile.Uuid  newfile.Userid newfile.Userid", newfile.Uuid, newfile.Userid, newfile.Userid)
 
-	sqlStatement := `INSERT INTO "TextEditorFileContent" (uuid,userid,filename,filecontent,savedate,filestatus,username,savedatetime)
-	VALUES($1, $2,$3,$4,$5,$6,$7,$8)`
-	_, err = db.Exec(sqlStatement, newfile.Uuid, newfile.Userid, newfile.FileName, newfile.FileContent, newfile.SaveDate, newfile.FileStatus, newfile.UserName, newfile.SaveDateTime)
+	sqlStatement := `INSERT INTO "TextEditorFileContent" (uuid,userid,filename,filecontent,savedate,filestatus,username,savedatetime,isstarred)
+	VALUES($1, $2,$3,$4,$5,$6,$7,$8,$9)`
+	_, err = db.Exec(sqlStatement, newfile.Uuid, newfile.Userid, newfile.FileName, newfile.FileContent, newfile.SaveDate, newfile.FileStatus, newfile.UserName, newfile.SaveDateTime,newfile.IsStarred)
 
 	if err != nil {
 		panic(err)
@@ -312,10 +316,10 @@ func GetFileDataById(c *gin.Context) {
 
 	for rows.Next() {
 		var filesDetails filesDetails
-		err := rows.Scan(&filesDetails.Uuid, &filesDetails.Userid, &filesDetails.FileName, &filesDetails.FileContent, &filesDetails.SaveDate, &filesDetails.FileStatus, &filesDetails.UserName, &filesDetails.SaveDateTime)
+		err := rows.Scan(&filesDetails.Uuid, &filesDetails.Userid, &filesDetails.FileName, &filesDetails.FileContent, &filesDetails.SaveDate, &filesDetails.FileStatus, &filesDetails.UserName, &filesDetails.SaveDateTime,&filesDetails.IsStarred)
 		if err != nil {
 			log.Println(err)
-		}
+		}		
 		if filesDetails.FileStatus == true {
 			fileDetailsList = append(fileDetailsList, filesDetails)
 		}
@@ -351,6 +355,36 @@ func UpdateFileById(c *gin.Context) {
 	fmt.Println("updatedfile", updatedfile.FileContent, updatedfile.SaveDateTime, IDStr)
 	sqlStatement := `UPDATE "TextEditorFileContent" SET  "filecontent"=$1, "filestatus"=$2, "username"=$3, "savedatetime"=$4 WHERE "uuid"=$5`
 	_, err = db.Exec(sqlStatement, updatedfile.FileContent, updatedfile.FileStatus, updatedfile.UserName, updatedfile.SaveDateTime, IDStr)
+	if err != nil {
+		panic(err)
+	}
+	c.IndentedJSON(http.StatusCreated, updatedfile)
+}
+
+func UpdatestarredById(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	var updatedfile filesDetails
+
+	if err := c.BindJSON(&updatedfile); err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := ID
+	sqlStatement := `UPDATE "TextEditorFileContent" SET   "isstarred"=$1, "username"=$2 WHERE "uuid"=$3`
+	_, err = db.Exec(sqlStatement,  updatedfile.IsStarred, updatedfile.UserName, IDStr)
 	if err != nil {
 		panic(err)
 	}
@@ -482,7 +516,7 @@ func GetAllDoc(c *gin.Context) {
 	// Return the retrieved data in the HTTP response
 	IDStr := "'" + ID + "'"
 
-	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime ,sendby FROM "UploadedFile" WHERE username = ` + IDStr)
+	rows, err := db.Query(`SELECT fid,username,filename,docstatus,savedatetime,isstarred ,sendby FROM "UploadedFile" WHERE username = ` + IDStr)
 
 	if err != nil {
 		panic(err)
@@ -494,7 +528,7 @@ func GetAllDoc(c *gin.Context) {
 
 	for rows.Next() {
 		var docDetails docDetails
-		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime, &docDetails.SendBy)
+		err := rows.Scan(&docDetails.Fid, &docDetails.Username, &docDetails.Filename, &docDetails.Docstatus, &docDetails.SaveDateTime,&docDetails.IsStarred, &docDetails.SendBy)
 		if err != nil {
 			log.Println(err)
 		}
@@ -577,6 +611,37 @@ func DeleteFile(c *gin.Context) {
 	fmt.Println("updatedfile", updateddoc.Docstatus, updateddoc.SaveDateTime, IDStr)
 	sqlStatement := `UPDATE "UploadedFile" SET  "docstatus"=$1, "username"=$2, "savedatetime"=$3 WHERE "fid"=$4`
 	_, err = db.Exec(sqlStatement, updateddoc.Docstatus, updateddoc.Username, updateddoc.SaveDateTime, IDStr)
+	if err != nil {
+		panic(err)
+	}
+	c.IndentedJSON(http.StatusCreated, updateddoc)
+
+}
+
+func starredfile(c *gin.Context) {
+
+	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", psqlInfo)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Successfully connected!")
+	var updateddoc docDetails
+
+	if err := c.BindJSON(&updateddoc); err != nil {
+		return
+	}
+	defer db.Close()
+	err = db.Ping()
+	ID := c.Param("id")
+	log.Println("ID", ID)
+
+	// Return the retrieved data in the HTTP response
+	IDStr := ID
+	sqlStatement := `UPDATE "UploadedFile" SET  "isstarred"=$1, "username"=$2 WHERE "fid"=$3`
+	_, err = db.Exec(sqlStatement, updateddoc.IsStarred, updateddoc.Username, IDStr)
 	if err != nil {
 		panic(err)
 	}
